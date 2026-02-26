@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Digger</title>
+<style>
+body{
+    margin:0;
+    font-family:Arial, sans-serif;
+    background:#111;
+    color:white;
+    overflow:hidden;
+}
+#game{
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+}
+#world{
+    flex:1;
+    position:relative;
+}
+canvas{
+    position:absolute;
+    width:100%;
+    height:100%;
+}
+#ui{
+    background:#1b1b1b;
+    padding:8px;
+}
+#stats{
+    font-size:14px;
+}
+#shop{
+    max-height:180px;
+    overflow-y:auto;
+    margin-top:6px;
+}
+.shopItem{
+    background:#2c2c2c;
+    margin:4px 0;
+    padding:6px;
+    border-radius:8px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:13px;
+}
+.shopLeft{
+    text-align:left;
+}
+.shopRight{
+    text-align:right;
+}
+.buy{
+    background:#4CAF50;
+    color:white;
+    border:none;
+    border-radius:6px;
+    padding:4px 8px;
+    margin-left:6px;
+}
+#digBtn{
+    width:100%;
+    margin-top:6px;
+    padding:12px;
+    font-size:16px;
+    background:#ff9800;
+    color:white;
+    border:none;
+    border-radius:8px;
+}
+.winScreen{
+    position:absolute;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:black;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    flex-direction:column;
+    font-size:22px;
+}
+</style>
+</head>
+<body>
+
+<div id="game">
+    <div id="world">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div id="ui">
+        <div id="stats">
+            Depth: <span id="depth">0</span>m |
+            Points: <span id="points">0</span>
+        </div>
+
+        <button id="digBtn">HOLD TO DIG</button>
+        <div id="shop"></div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+function resize(){
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+}
+resize();
+window.onresize = resize;
+
+let depth = 0;
+let points = 0;
+let digging = false;
+let won = false;
+
+const upgrades = {
+    power:0, speed:0, auto:0, double:0,
+    critChance:0, critMult:0, luck:0,
+    drill:0, gemValue:0, efficiency:0,
+    depthBoost:0, bunkerBreaker:0
+};
+
+function cost(key){
+    return Math.floor(20 * Math.pow(1.7, upgrades[key]));
+}
+
+function buy(key){
+    let price = cost(key);
+    if(points >= price){
+        points -= price;
+        upgrades[key]++;
+        renderShop();
+    }
+}
+
+function dig(dt){
+    let base = 2 + upgrades.power;
+    let speed = 1 + upgrades.speed*0.4;
+    let critChance = upgrades.critChance*0.02;
+    let critMult = 2 + upgrades.critMult*0.5;
+
+    let gain = base * speed * dt;
+
+    if(Math.random() < critChance){
+        gain *= critMult;
+    }
+
+    gain *= (1 + upgrades.double*0.5);
+    gain *= (1 + upgrades.depthBoost*0.1);
+
+    depth += gain;
+    points += gain;
+}
+
+function autoDig(dt){
+    if(upgrades.auto > 0){
+        let autoPower = upgrades.auto * 2 * dt;
+        depth += autoPower;
+        points += autoPower;
+    }
+}
+
+function biomeColor(){
+    if(depth < 2000) return "#5c3b1e";       // dirt
+    if(depth < 5000) return "#444";         // stone
+    if(depth < 9000) return "#222";         // deep rock
+    if(depth < 10000) return "#777";        // bunker metal
+    return "#000";
+}
+
+function drawBackground(){
+    ctx.fillStyle = biomeColor();
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function drawMiner(){
+    let x = canvas.width/2;
+    let y = canvas.height/2;
+
+    ctx.fillStyle="white";
+    ctx.fillRect(x-12,y-30,24,30);
+    ctx.fillRect(x-6,y-45,12,15);
+
+    let angle = digging ? Math.sin(Date.now()/80)*0.9 : 0;
+    ctx.save();
+    ctx.translate(x,y-20);
+    ctx.rotate(angle);
+    ctx.fillStyle="silver";
+    ctx.fillRect(0,-3,30,6);
+    ctx.restore();
+}
+
+function drawBunkerBoss(){
+    let x = canvas.width/2;
+    let y = canvas.height/2;
+
+    ctx.fillStyle="white";
+    ctx.fillRect(x-20,y-40,40,40); // body
+
+    ctx.fillStyle="black";
+    ctx.fillRect(x-25,y-55,50,20); // turban
+
+    ctx.fillStyle="white";
+    ctx.fillText("YOU FOUND THE BUNKER", x-110, y-80);
+    ctx.fillText("YOU WIN", x-40, y+80);
+}
+
+function draw(){
+    drawBackground();
+
+    if(depth >= 10000){
+        won = true;
+        drawBunkerBoss();
+        return;
+    }
+
+    drawMiner();
+}
+
+function updateUI(){
+    document.getElementById("depth").innerText = Math.floor(depth);
+    document.getElementById("points").innerText = Math.floor(points);
+}
+
+function loop(t){
+    if(!loop.last) loop.last = t;
+    let dt = (t - loop.last)/1000;
+    loop.last = t;
+
+    if(!won){
+        if(digging) dig(dt);
+        autoDig(dt);
+    }
+
+    draw();
+    updateUI();
+    requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+document.getElementById("digBtn").ontouchstart=()=>digging=true;
+document.getElementById("digBtn").ontouchend=()=>digging=false;
+document.getElementById("digBtn").onmousedown=()=>digging=true;
+document.getElementById("digBtn").onmouseup=()=>digging=false;
+
+function renderShop(){
+    const shop = document.getElementById("shop");
+    shop.innerHTML = "";
+
+    for(let key in upgrades){
+        let div = document.createElement("div");
+        div.className="shopItem";
+
+        div.innerHTML = `
+        <div class="shopLeft">
+            ${key} Lv ${upgrades[key]}
+        </div>
+        <div class="shopRight">
+            ${cost(key)} pts
+            <button class="buy" onclick="buy('${key}')">Buy</button>
+        </div>
+        `;
+        shop.appendChild(div);
+    }
+}
+
+renderShop();
+</script>
+
+</body>
+  </html>
